@@ -2,9 +2,9 @@
 
 using namespace std;
 
-Heap::Heap()
+Heap::Heap(int size)
 {
-	arr = new HeapNode*[HEAP_SIZE];
+	arr = new HeapNode*[size];
 }
 
 Heap::~Heap()
@@ -41,7 +41,7 @@ void Heap::up(int pos)
 
 void Heap::down(int pos)
 {
-	int son = pos *2;
+	int son = pos * 2;
 	if (son + 1 <= cnt && arr[son+1]->value < arr[son]->value)son++;
 	while (son <= cnt && arr[son]->value < arr[pos]->value) {
 		change(son, pos);

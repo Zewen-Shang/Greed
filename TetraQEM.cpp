@@ -27,67 +27,70 @@ VTK_MODULE_INIT(vtkRenderingFreeType);
 #include <vtkGenericDataObjectReader.h>
 #include <vtkUnstructuredGrid.h>
 #include <vtkCamera.h>
+#include <vtkUnstructuredGridQuadricDecimation.h>
 
 #include <iostream>
 #include <fstream>
+#include <chrono>
+#include <Eigen/dense>
 
 #include "Model.h"
 
+#define START_TIME startTime = chrono::system_clock::now();
+
+#define END_TIME(str) endTime = chrono::system_clock::now();\
+dur = endTime - startTime;\
+second = chrono::duration<double>(dur);\
+cout << str <<"Use time : " << second.count() << endl
+
+using namespace std;
+using namespace chrono;
+
 int main()
 {
+    chrono::system_clock::time_point startTime = chrono::system_clock::now();
+    chrono::system_clock::time_point endTime = chrono::system_clock::now();
+    auto dur = endTime - startTime;
+    chrono::duration<double> second(dur);
 
-    Model M("cow");
-    //M.getUnionVertex();
+    Model M("box1m");
+    
+    START_TIME;
+    M.selectBorder();
     M.setEdgeCost();
-    
-    cout << "Heap Size:" << M.H.cnt << endl;
+    END_TIME("Input");
 
-    for (int i = 0; i < 40000; i++) {
-        if (i % 1000 == 0)
-            cout << i << endl;
-        M.collaspeMin();
-    }
+    cout << "Edge" << M.eCnt << endl;
 
+    START_TIME;
+    M.simplification(0.22);
+    END_TIME("Simplification");
+    M.getErr();
+    cout << Edge::keni << endl;
+    cout << Edge::bukeni << endl;
 
-    vtkSmartPointer<vtkUnstructuredGrid> unGrid = M.outputVtk("cow");
-    vtkNew<vtkNamedColors> colors;
-
-
-    vtkSmartPointer<vtkDataSetMapper> mapper = vtkSmartPointer<vtkDataSetMapper>::New();
-    mapper->SetInputData(unGrid);
-    //mapper->SetScalarRange(unstgrid->GetScalarRange());
-
-    auto actor =
-        vtkSmartPointer<vtkActor>::New();
-    actor->SetMapper(mapper);
-    actor->RotateX(20);
-    actor->RotateY(20);
-    actor->RotateZ(20);
-    actor->GetProperty()->SetColor(colors->GetColor3d("Yellow").GetData());
-    //Create a renderer, render window, and interactor
-    auto renderer =
-        vtkSmartPointer<vtkRenderer>::New();
-    auto renderWindow =
-        vtkSmartPointer<vtkRenderWindow>::New();
-    renderWindow->AddRenderer(renderer);
-    renderWindow->SetSize(640, 480);
-
-    auto renderWindowInteractor =
-        vtkSmartPointer<vtkRenderWindowInteractor>::New();
-    renderWindowInteractor->SetRenderWindow(renderWindow);
-
-    //Add the actors to the scene
-    renderer->AddActor(actor);
-    renderer->SetBackground(colors->GetColor3d("black").GetData());
-
-    //Render and interact
-    renderWindow->Render();
-    renderWindowInteractor->Start();
-
-    
-
-
+    M.outputVtk("box1m_Greed_22");
 
 }
 
+//{
+    //vtkNew<vtkUnstructuredGridReader>reader;
+//
+//reader->SetFileName("./input/tetBox.vtk");
+//reader->Update();
+//vtkUnstructuredGrid* unGrid = reader->GetOutput();
+//vtkNew<vtkUnstructuredGridQuadricDecimation>dec;
+//dec->SetInputData(unGrid);
+//dec->SetScalarsName("U");
+//dec->SetTargetReduction(0.7);
+//dec->Update();
+
+//vtkUnstructuredGrid* output = dec->GetOutput();
+
+
+//vtkSmartPointer<vtkUnstructuredGridWriter> writer = vtkSmartPointer<vtkUnstructuredGridWriter>::New();
+//writer->SetFileName("./outputVtk/tetBox0.3.vtk");
+//writer->SetInputData(output);
+//writer->Write();
+//}
 

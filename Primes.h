@@ -18,12 +18,14 @@
 
 #include "Utils.h"
 #include "Heap.h"
-#define N 70000
+#include "Coff.h"
 
 using namespace std;
 using namespace Eigen;
 
-typedef Matrix<double, 6, 1> Vector6d;
+typedef Matrix<double, 4, 1> Vector4d;
+
+const double eps = 1e-4;
 
 enum State {
 	Valid,
@@ -50,11 +52,12 @@ class Vertex:public Prime
 {
 public:
 	int id;
-	Vector6d pos;
+	Vector4d pos;
+	Coff c;
 	//与它相关的
 	vector<Edge*> edge;
 	Vertex();
-	Vertex(int id, Vector6d pos);
+	Vertex(int id, Vector4d pos);
 	void mapTo(Vertex* target);
 	Edge* isNeighbour(Vertex* other) const;
 	vector<Tetra*> getTetras() const;
@@ -63,12 +66,15 @@ public:
 
 class Edge:public Prime ,public HeapNode{
 public:
+	static int keni;
+	static int bukeni;
 	Vertex* v0, * v1;
 	vector<Tetra*> tetra;
 	Edge() {};
 	Edge(Vertex* v0,Vertex* v1);
-	Vector6d midPos;
-	void collapse();
+	Vector4d midPos;
+	Coff c;
+	int collapse();
 	//检测点/面是否在边上
 	bool checkVertex(Vertex* v);
 	bool checkTetra(Tetra* f);
@@ -86,6 +92,8 @@ public:
 	bool checkInversion() const;
 };
 
+
+
 class Tetra :public Prime {
 public:
 	Edge* es[6];
@@ -95,7 +103,7 @@ public:
 	void changeEdge(Edge* from,Edge*to);
 	vector<int> getVertexIds() const;
 	vector<Vertex*>getVertexs() const;
-	bool checkInversion(Vertex* v, Vector6d midPos);
-	Vector6d getCenter()const;
+	bool checkInversion(Vertex* v, Vector4d midPos);
+	Vector4d getCenter()const;
 };
 

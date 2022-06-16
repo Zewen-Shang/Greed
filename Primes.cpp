@@ -4,7 +4,7 @@ Vertex::Vertex()
 {
 }
 
-Vertex::Vertex(int id, Vector6d pos):id(id),pos(pos)
+Vertex::Vertex(int id, Vector4d pos):id(id),pos(pos)
 {
 }
 
@@ -64,8 +64,9 @@ vector<Tetra*> Vertex::getTetras() const
 Edge::Edge(Vertex* v0, Vertex* v1):v0(v0),v1(v1) {};
 
 
-void Edge::collapse()
+int Edge::collapse()
 {
+	int ans = 0;
 	//cout << "v0:" << v0->id << ", v1:" << v1->id << ",  to  " << v0->id << endl;
 	//É¾³ý×Ô¼º
 	kill();
@@ -73,11 +74,16 @@ void Edge::collapse()
 	for (auto t = tetra.begin(); t != tetra.end(); t++) {
 		if ((*t)->valid()) {
 			(*t)->kill();
+			ans++;
 		}
 	}
+
 	v0->pos = midPos;
+	
 	v1->state = Invalid;
 	v1->mapTo(v0);
+	this->state = Invalid;
+	return ans;
 }
 
 bool Edge::checkVertex(Vertex* v)
@@ -144,31 +150,33 @@ void Edge::InitCost(Heap& H)
 	value = calcCost();
 	H.insert(this);
 }
-
+int Edge::keni = 0;
+int Edge::bukeni = 0;
 double Edge::calcCost() {
-	//Vector3d alterPos[3];
-	//Cofficient C = v0->C + v1->C;
-	//double newValue = 100000;
-	//if ( abs(C.A.determinant()) >= 0.000002) {
-	//	Matrix3d AI = C.A.inverse();
-	//	midPos = -AI * C.b;
-	//	newValue = -C.b.transpose() * AI * C.b + C.c;
-	//}
-	//else {
-	//	alterPos[0] = v0->pos;
-	//	alterPos[1] = (v0->pos + v1->pos) / 2;
-	//	alterPos[2] = v1->pos;
+	Vector4d alterPos[3];
+	Coff C = v0->c + v1->c;
+	double newValue = 100000;
+	if ( abs(C.A.determinant()) >= eps) {
+		Edge::keni++;
+		Matrix4d AI = C.A.inverse();
+		midPos = -AI * C.b;
+		newValue = -C.b.transpose() * AI * C.b + C.c;
+	}
+	else {
+		Edge::bukeni++;
+		alterPos[0] = v0->pos;
+		alterPos[1] = (v0->pos + v1->pos) / 2;
+		alterPos[2] = v1->pos;
 
-	//	for (auto pos : alterPos) {
-	//		double error = C.getError(pos);
-	//		if (newValue > error) {
-	//			newValue = error;
-	//			midPos = pos;
-	//		}
-	//	}
-	//}
-	midPos = (v0->pos + v1->pos) / 2;
-	return len();
+		for (auto pos : alterPos) {
+			double error = c.getError(pos);
+			if (newValue > error) {
+				newValue = error;
+				midPos = pos;
+			}
+		}
+	}
+	return C.getError(midPos);
 }
 
 bool Edge::checkInversion() const
@@ -233,38 +241,56 @@ vector<Vertex*> Tetra::getVertexs() const
 	return ans;;
 }
 
-bool Tetra::checkInversion(Vertex* v, Vector6d midPos)
+bool Tetra::checkInversion(Vertex* v, Vector4d midPos)
 {
 	assert(valid());
-	vector<Vertex*> vs = getVertexs();
-	vector<Vector3d>stablePos;
-	for (auto tv : vs) {
-		if (tv != v) {
-			stablePos.push_back(tv->pos.block<3,1>(1,1));
+
+	//vector<Vertex*> vs = getVertexs();
+	//vector<Vector3d>stablePos;
+	//for (auto tv : vs) {
+	//	if (tv != v) {
+	//		stablePos.push_back(tv->pos.block<3,1>(0,0));
+	//	}
+	//}
+
+	//Vector3d normal = (stablePos[0] - stablePos[1]).cross(stablePos[0] - stablePos[2]).normalized();
+	//Vector3d p1 = midPos.block<3, 1>(0, 0) - stablePos[0];
+	//Vector3d p2 = v->pos.block<3, 1>(0, 0) - stablePos[0];
+
+	//return p1.dot(normal) * p2.dot(normal) < 0;
+	int x = -1;
+	vector<Vertex*> ids = getVertexs();
+	for (int i = 0; i < 4; i++) {
+		if (ids[i] == v) {
+			x = i;
+		}
+	}
+	assert(x != -1);
+	Matrix3d oldM;
+	int cnt = 0;
+	for (int i = 0; i < 4; i++) {
+		if (i != x) {
+			oldM.col(cnt) = (ids[i]->pos - ids[x]->pos).block(0, 0, 3, 1);
+			cnt++;
+		}
+	}
+	Matrix3d newM;
+	cnt = 0;
+	for (int i = 0; i < 4; i++) {
+		if (i != x) {
+			newM.col(cnt) = (ids[i]->pos - midPos).block(0, 0, 3, 1);
+			cnt++;
 		}
 	}
 
-	Vector3d normal = (stablePos[0] - stablePos[1]).cross(stablePos[0] - stablePos[2]).normalized();
-	Vector3d p1 = midPos.block<3,1>(1,1) - stablePos[0], p2 = v->pos.block<3,1>(1,1) - stablePos[0];
+	return oldM.determinant() * newM.determinant() < 0;
 
-	return p1.dot(normal) * p2.dot(normal) < 0;
-
-	//Vector3d oldPos[3], newPos[3];
-	//vector<Vertex*> vs = getVertexs();
-	//for (int i = 0; i < 3; i++) {
-	//	newPos[i] = oldPos[i] = vs[i]->pos;
-	//	if (vs[i] == v)newPos[i] = midPos;
-	//}
-
-	//Vector3d newNormal = (newPos[0] - newPos[1]).cross(newPos[0] - newPos[2]);
-	//Vector3d oldNormal = (oldPos[0] - oldPos[1]).cross(oldPos[0] - oldPos[2]);
-	//return newNormal.dot(oldNormal)<0;
 }
 
-Vector6d Tetra::getCenter() const
+Vector4d Tetra::getCenter() const
 {
 	vector<Vertex*>vs = getVertexs();
-	Vector6d ans = Vector6d::Zero();
+	Vector4d ans = Vector4d::Zero();
 	for (auto v : vs) {
 		ans += v->pos;
 	}

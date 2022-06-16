@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <assert.h>
-#define HEAP_SIZE 120000
 
 class Heap;
 class HeapNode;
@@ -21,7 +20,7 @@ class Heap
 public:
 	HeapNode** arr;
 	int cnt = 0;
-	Heap();
+	Heap(int size);
 	~Heap();
 	void insert(HeapNode *n);
 	void change(int i, int j);

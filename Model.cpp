@@ -4,37 +4,54 @@ using namespace std;
 
 
 Model::Model(string path) {
-
-	xBound[0] = yBound[0] = zBound[0] = DBL_MAX;
-	xBound[1] = yBound[1] = zBound[1] = DBL_MIN;
-	memset(unionVertex, 0, sizeof(unionVertex));
-	vertexBuffer = new Vertex[N];
-	edgeBuffer = new Edge[N * 2];
-	tetraBuffer = new Tetra[N];
+	for (int i = 0; i < 4; i++) {
+		upBound[i] = DBL_MIN;
+		downBound[i] = DBL_MAX;
+	}
 
 	int loadVCnt, loadTCnt, temp;
 
-	ifstream fs("./input/" + path + ".node");
-	fs >> loadVCnt >> temp >> temp >> temp;
+	vtkNew<vtkUnstructuredGridReader> reader;
+	vtkUnstructuredGrid* unGrid;
+	string fileName = "./input/" + path + ".vtk";
+	reader->SetFileName(fileName.c_str());
+	reader->Update();
+	unGrid = reader->GetOutput();
+
+	loadVCnt = unGrid->GetPoints()->GetNumberOfPoints();
+	vertexBuffer = new Vertex[loadVCnt + 10];
+
+	string attrName = "attr";
 
 	for (int i = 0; i < loadVCnt; i++) {
-		double x, y, z;
-		fs >> temp >> x >> y >> z >> temp;
-		Vector3d Pos(x, y, z);
+		double *pos = unGrid->GetPoint(i);
+		vtkPointData* pointData = unGrid->GetPointData();
+		double* attr;
+		attr = pointData->GetArray(attrName.c_str())->GetTuple(i);
+		
+		Vector4d Pos(pos[0], pos[1], pos[2], attr[0]);
 		insertVertex(Pos);
 	}
 
-	fs.close();
-	fs.open("./input/" + path + ".ele");
-	fs >> loadTCnt >> temp >> temp;
+	loadTCnt = unGrid->GetCells()->GetNumberOfCells();
+	edgeBuffer = new Edge[loadTCnt*2];
+	tetraBuffer = new Tetra[loadTCnt+10];
+
+	vtkIdList* ids;
 	for (int i = 0; i < loadTCnt; i++) {
-		int ids[4];
-		fs >> temp >> ids[0] >> ids[1] >> ids[2] >> ids[3];
-		insertTetra(ids);
+		int id[4];
+		ids = unGrid->GetCell(i)->GetPointIds();
+		for (int j = 0; j < 4; j++) {
+			id[j] = ids->GetId(j);
+		}
+		insertTetra(id);
 	}
 
-	cout << "Load success. V = " << vCnt << ", F = " << tCnt << endl;
+	setScale();
+	AddQ();
+	cout << "Load success. V = " << vCnt << ", T = " << tCnt << endl;
 }
+
 
 Model::~Model() {
 	delete[] vertexBuffer;
@@ -42,17 +59,14 @@ Model::~Model() {
 	delete[] tetraBuffer;
 }
 
-Vertex* Model::insertVertex(Vector3d Pos)
+Vertex* Model::insertVertex(Vector4d Pos)
 {
-	xBound[0] = min(xBound[0], Pos.x());
-	xBound[1] = max(xBound[1], Pos.x());
-	yBound[0] = min(yBound[0], Pos.y());
-	yBound[1] = max(yBound[1], Pos.y());
-	zBound[0] = min(zBound[0], Pos.z());
-	zBound[1] = max(zBound[1], Pos.z());
-	vCnt++;
+	for (int i = 0; i < 4; i++) {
+		downBound[i] = min(downBound[i], Pos[i]);
+		upBound[i] = max(upBound[i], Pos[i]);
+	}
 	vertexBuffer[vCnt] = Vertex(vCnt, Pos);
-	return &vertexBuffer[vCnt];
+	return &vertexBuffer[vCnt++];
 }
 
 
@@ -62,9 +76,9 @@ Edge* Model::insertEdge(int id0, int id1) {
 	Vertex* v0 = &vertexBuffer[id0], * v1 = &vertexBuffer[id1];
 	Edge* target = eMap[make_pair(id0, id1)];
 	if (target)return target;
-	eCnt++;
 	edgeBuffer[eCnt] = Edge(v0, v1);
 	target = (&edgeBuffer[eCnt]);
+	eCnt++;
 	v0->edge.push_back(target);
 	v1->edge.push_back(target);
 	eMap[make_pair(id0, id1)] = target;
@@ -74,15 +88,20 @@ Edge* Model::insertEdge(int id0, int id1) {
 Tetra* Model::insertTetra(int id[])
 {
 	sort(id, id+4);
+	tuple<int, int, int> tups[4] = {
+		tuple<int,int,int>(id[0],id[1],id[2]),
+		tuple<int,int,int>(id[0],id[1],id[3]),
+		tuple<int,int,int>(id[0],id[2],id[3]),
+		tuple<int,int,int>(id[1],id[2],id[3]),
+	};
 
 	for (int i = 0; i < 4; i++) {
-		triple tri;
-		for (int j = 0; j < 4; j++) {
-			if (j == i)continue;
-			tri.insert(id[j]);
+		if (borderMap.count(tups[i]) == 1) {
+			borderMap.erase(tups[i]);
 		}
-		assert(tri.cnt == 3);
-		fMap[tri]++;
+		else {
+			borderMap[tups[i]] = 1;
+		}
 	}
 
 	Edge* newEdges[6];
@@ -93,33 +112,39 @@ Tetra* Model::insertTetra(int id[])
 		}
 	}
 	assert(cnt == 6);
-	tCnt++;
 	tetraBuffer[tCnt] = Tetra(newEdges);
 	Tetra* target = &tetraBuffer[tCnt];
+	tCnt++;
 	for (auto e : newEdges) {
 		e->tetra.push_back(target);
 	}
-	//Cofficient c = faceBuffer[fCnt].getCofficient();
-	//cout <<"abc:"<< a * a + b * b + c * c << endl;
-	//vertexBuffer[id0].C = vertexBuffer[id0].C + c;
-	//vertexBuffer[id1].C = vertexBuffer[id1].C + c;
-	//vertexBuffer[id2].C = vertexBuffer[id2].C + c;
+
 	return target;
 }
 
-vtkSmartPointer<vtkUnstructuredGrid> Model::outputVtk(string path)
+void Model::outputVtk(string fileName)
 {
 	vtkSmartPointer<vtkUnstructuredGrid> unGrid= vtkSmartPointer<vtkUnstructuredGrid>::New();
 	vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
 	vtkSmartPointer<vtkCellArray> cellArray = vtkSmartPointer<vtkCellArray>::New();
-	points->InsertNextPoint(0, 0, 0);
+	vtkNew<vtkPointData> pointData;
+	vtkNew<vtkFloatArray> attr;
 
-	for (int i = 1; i <= vCnt; i++) {
+	string attrName = "attr";
+
+	attr->SetName(attrName.c_str());
+
+	for (int i = 0; i < vCnt; i++) {
 		Vertex* v = &vertexBuffer[i];
 		points->InsertNextPoint(v->pos.x(), v->pos.y(), v->pos.z());
+		attr->InsertNextTuple1(v->pos(3)/scaleRate);
 	}
 
-	for (int i = 1; i <= tCnt; i++) {
+	for (int i = 0; i < 3; i++) {
+		unGrid->GetPointData()->AddArray(attr);
+	}
+
+	for (int i = 0; i < tCnt; i++) {
 		Tetra* t = &tetraBuffer[i];
 		if (t->valid()) {
 			vector<int>vs = t->getVertexIds();
@@ -136,43 +161,135 @@ vtkSmartPointer<vtkUnstructuredGrid> Model::outputVtk(string path)
 	unGrid->SetCells(10,cellArray);
 
 	vtkSmartPointer<vtkUnstructuredGridWriter> writer = vtkSmartPointer<vtkUnstructuredGridWriter>::New();
-	writer->SetFileName(("./outputVtk/" + path + ".vtk").c_str());
+	writer->SetFileName(("./outputVtk/" + fileName + ".vtk").c_str());
 	writer->SetInputData(unGrid);
 	writer->Write();
 
-	return unGrid;
+	//return unGrid;
 };
-
 
 
 void Model::setEdgeCost()
 {
-	for (int i = 1; i <= eCnt; i++) {
+	H = new Heap(eCnt + 10);
+	for (int i = 0; i < eCnt; i++) {
 		assert(edgeBuffer[i].valid());
 		Edge* e = &edgeBuffer[i];
-		if (!unionVertex[e->v0->id] && !unionVertex[e->v1->id])
-			edgeBuffer[i].InitCost(H);
+		edgeBuffer[i].InitCost(*H);
 	}
 }
 
 bool Model::collaspeMin()
 {
-	Edge* e = (Edge*)H.top();
-	H.pop();
+	Edge* e = (Edge*)H->top();
+	H->pop();
 	if (!e->valid()) return 0;
 	if (e->checkInversion())return 0;
-	e->collapse();
+	tElimate += e->collapse();
+	errArr.push_back(e->value);
 	return 1;
 }
 
-void Model::getUnionVertex()
+void Model::simplification(double rate)
 {
-	for (auto f : fMap) {
-		if (f.second == 1)
-			for (int i = 0; i < 3; i++) {
-				unionVertex[f.first.ids[i]] = 1;
+	int line = 10000;
+	int targetNum = (1 - rate) * tCnt;
+	while (tElimate < targetNum)
+	{
+		if (tElimate >= line) {
+			cout << tElimate << endl;
+			line += 10000;
+		}
+		if (H->cnt == 0) {
+			for (int i = 0; i < eCnt; i++) {
+				if (edgeBuffer[i].state == Valid) {
+					edgeBuffer[i].InitCost(*H);
+				}
 			}
+		}
+		collaspeMin();
 	}
+}
+
+
+void Model::selectBorder()
+{
+	set<int> borderSet;
+	for (auto i : borderMap) {
+		int vPos[3];
+		vPos[0] = std::get<0>(i.first);
+		vPos[1] = std::get<1>(i.first);
+		vPos[2] = std::get<2>(i.first);
+
+
+		Vector4d e0 = vertexBuffer[vPos[1]].pos - vertexBuffer[vPos[0]].pos, e1 = vertexBuffer[vPos[2]].pos - vertexBuffer[vPos[0]].pos;
+		Vector3d a0 = e0.block(0, 0, 3, 1), a1 = e1.block(0, 0, 3, 1);
+		double deter = a0.cross(a1).norm();
+		e0.normalize();
+		e1 = e1 - e0 * (e0.dot(e1));
+		e1.normalize();
+		Matrix4d A = Matrix4d::Identity();
+		A -= (e0 * e0.transpose() + e1 * e1.transpose());
+		A *= abs(deter) / 6.0 * 20;
+
+		for (int j = 0; j < 3; j++) {
+			vertexBuffer[vPos[j]].c.A += A;
+			borderSet.insert(vPos[j]);
+		}
+	}
+}
+
+void Model::AddQ()
+{
+	for (int i = 0; i < tCnt; i++) {
+		Tetra t = tetraBuffer[i];
+		vector<Vertex*>ids = t.getVertexs();
+		vector<Vector4d> es;
+		for (int j = 0; j < 3; j++) {
+			es.push_back((ids[j]->pos - ids[3]->pos).normalized());
+		}
+		es = smtOrth(es);
+		Matrix4d A = Matrix4d::Identity();
+		for (int j = 0; j < 3; j++) {
+			A -= es[j] * es[j].transpose();
+		}
+
+
+		Matrix3d M;
+		for (int j = 0; j < 3; j++) {
+			M.col(j) = es[j].block(0, 0, 3, 1);
+		}
+		double deter = abs(M.determinant());
+
+		for (int j = 0; j < 4; j++) {
+			Vector4d p = vertexBuffer[ids[j]->id].pos;
+			Vector4d b = -A * vertexBuffer[ids[j]->id].pos;
+			double c = p.transpose() * A * p;
+			Coff C(A, b, c);
+			vertexBuffer[j].c = vertexBuffer[j].c + C * deter;
+		}
+	}
+}
+
+void Model::setScale()
+{
+	scaleRate = (upBound[0] - downBound[0]) * (upBound[1] - downBound[1]) * (upBound[2] - downBound[2]);
+	scaleRate = pow(scaleRate, 1.0 / 3);
+	scaleRate /= (upBound[3] - downBound[3]);
+	for (int i = 0; i < vCnt; i++) {
+		vertexBuffer[i].pos[3] *= scaleRate;
+	}
+}
+
+void Model::getErr()
+{
+	double maxErr = 0, avgErr = 0;
+	for (double err : errArr) {
+		maxErr = max(maxErr, err);
+		avgErr += err;
+	}
+	cout << "Max Err:" << maxErr << endl;
+	cout << "Avg Err:" << avgErr / errArr.size() << endl;
 }
 
 //void Model::outputStand(int n,bool ran)
